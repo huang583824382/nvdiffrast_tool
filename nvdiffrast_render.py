@@ -77,18 +77,7 @@ class NvdiffrastRender:
         self.model = None
         self.texture = None
 
-    def frame(self, k, q, t, h, w, near=0.1, far=1000.0):
-        """Render a frame.
-        Args:
-            k: camera intrinsic matrix fx, fy, cx, cy. (4)
-            q: camera quaternion. (4)
-            t: camera translation. (3)
-            h (int): image height.
-            w (int): image width.
-        Returns:
-            np.array: rendered image.
-
-        """
+    def frame_from_Tcw(self, k, Tcw, h, w, near=0.1, far=1000.0):
         assert self.model is not None, "No model loaded"
 
         # create perspective projection matrix
@@ -96,11 +85,7 @@ class NvdiffrastRender:
         proj = self.perspective_projection(fx, fy, cx, cy, near, far, h, w).cuda()
 
         # create view matrix (w2c)
-        R = torch.tensor(self.quaternion_to_matrix(q)).cuda().float()
-        T = torch.tensor(t).cuda().float()
-        view = torch.eye(4).cuda().float()
-        view[:3, :3] = R
-        view[:3, 3] = T
+        view = torch.tensor(Tcw).cuda().float()
 
         # coordinate system conversion
         convert = torch.tensor([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]]).cuda().float()
@@ -158,6 +143,14 @@ class NvdiffrastRender:
         rgb = rgb.astype(np.uint8)
         depth = -depth.cpu().numpy()[0, ..., -2]
         return rgb, depth
+
+    def frame_from_qt(self, k, q, t, h, w, near=0.1, far=1000.0):
+        R = self.quaternion_to_matrix(q)
+        view = np.eye(4)
+        view[:3, :3] = R
+        view[:3, 3] = t
+        view = torch.tensor(view).cuda().float()
+        return self.frame_from_Tcw(k, view, h, w, near, far)
     
     @staticmethod
     def perspective_projection(fx, fy, cx, cy, near, far, height, width):
@@ -222,7 +215,7 @@ if __name__ == "__main__":
     print('t', t)
     print('k', k)
 
-    rgb, depth = render.frame(
+    rgb, depth = render.frame_from_qt(
         k, q, t, args.size[0], args.size[1]
     )
 
